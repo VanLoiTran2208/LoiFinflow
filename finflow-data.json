@@ -1,0 +1,564 @@
+{
+  "accounts": [
+    {
+      "id": "usr-owner",
+      "fullName": "Trần Văn Lợi",
+      "email": "loi.tran@finflow.app",
+      "password": "123456",
+      "role": "Chủ hộ",
+      "isOwner": true,
+      "color": "#10B981",
+      "familyGroupId": "fam-default",
+      "createdAt": "2026-10-01"
+    },
+    {
+      "id": "usr-member",
+      "fullName": "Nguyễn Thu Hà",
+      "email": "ha.nguyen@finflow.app",
+      "password": "123",
+      "role": "Thành viên",
+      "isOwner": false,
+      "color": "#8B5CF6",
+      "familyGroupId": "fam-default",
+      "createdAt": "2026-10-01"
+    },
+    {
+      "id": "usr-independent",
+      "fullName": "Lê Minh Khôi",
+      "email": "khoi.le@finflow.app",
+      "password": "123",
+      "role": "Cá nhân",
+      "isOwner": false,
+      "color": "#F59E0B",
+      "familyGroupId": null,
+      "createdAt": "2026-10-02"
+    }
+  ],
+  "familyInfo": {
+    "id": "fam-default",
+    "name": "Gia Đình Nhỏ",
+    "ownerId": "usr-owner",
+    "inviteCode": "FAM-8826-FIN"
+  },
+  "personalDataStore": {
+    "usr-owner": {
+      "monthlyIncome": 1,
+      "funds": [
+        {
+          "id": "f1",
+          "name": "Thiết yếu",
+          "icon": "home",
+          "color": "#10B981",
+          "defaultPct": 55
+        },
+        {
+          "id": "f2",
+          "name": "Tiết kiệm",
+          "icon": "piggy-bank",
+          "color": "#3B82F6",
+          "defaultPct": 10
+        },
+        {
+          "id": "f3",
+          "name": "Đầu tư sinh lời",
+          "icon": "trending-up",
+          "color": "#06B6D4",
+          "defaultPct": 10
+        },
+        {
+          "id": "f4",
+          "name": "Hưởng thụ & Du lịch",
+          "icon": "party-popper",
+          "color": "#F59E0B",
+          "defaultPct": 10
+        },
+        {
+          "id": "f5",
+          "name": "Học tập & Sách vở",
+          "icon": "book-open",
+          "color": "#8B5CF6",
+          "defaultPct": 10
+        },
+        {
+          "id": "f6",
+          "name": "Cho đi & Hiếu hỉ",
+          "icon": "heart-handshake",
+          "color": "#EC4899",
+          "defaultPct": 5
+        }
+      ],
+      "allocations": {
+        "f1": 45,
+        "f2": 15,
+        "f3": 25,
+        "f4": 5,
+        "f5": 5,
+        "f6": 5
+      },
+      "transactions": [
+        {
+          "id": "tx-1791084973567",
+          "fundId": "f1",
+          "amount": 15000,
+          "date": "2026-10-04",
+          "note": "Ăn sáng bánh mì/phở",
+          "userName": "Trần Văn Lợi",
+          "receiptUrl": null
+        }
+      ],
+      "monthlyBudgets": {
+        "2026-08": {
+          "monthlyIncome": 1,
+          "allocations": {
+            "f1": 45,
+            "f2": 15,
+            "f3": 25,
+            "f4": 5,
+            "f5": 5,
+            "f6": 5
+          }
+        },
+        "2026-09": {
+          "monthlyIncome": 1,
+          "allocations": {
+            "f1": 45,
+            "f2": 15,
+            "f3": 25,
+            "f4": 5,
+            "f5": 5,
+            "f6": 5
+          }
+        },
+        "2026-10": {
+          "monthlyIncome": 16000000,
+          "allocations": {
+            "f1": 45,
+            "f2": 15,
+            "f3": 25,
+            "f4": 5,
+            "f5": 5,
+            "f6": 5
+          }
+        }
+      }
+    },
+    "usr-member": {
+      "monthlyIncome": 18000000,
+      "funds": [
+        {
+          "id": "f1",
+          "name": "Thiết yếu",
+          "icon": "home",
+          "color": "#10B981",
+          "defaultPct": 55
+        },
+        {
+          "id": "f2",
+          "name": "Tiết kiệm",
+          "icon": "piggy-bank",
+          "color": "#3B82F6",
+          "defaultPct": 10
+        },
+        {
+          "id": "f3",
+          "name": "Đầu tư sinh lời",
+          "icon": "trending-up",
+          "color": "#06B6D4",
+          "defaultPct": 10
+        },
+        {
+          "id": "f4",
+          "name": "Hưởng thụ & Du lịch",
+          "icon": "party-popper",
+          "color": "#F59E0B",
+          "defaultPct": 10
+        },
+        {
+          "id": "f5",
+          "name": "Học tập & Sách vở",
+          "icon": "book-open",
+          "color": "#8B5CF6",
+          "defaultPct": 10
+        },
+        {
+          "id": "f6",
+          "name": "Cho đi & Hiếu hỉ",
+          "icon": "heart-handshake",
+          "color": "#EC4899",
+          "defaultPct": 5
+        }
+      ],
+      "allocations": {
+        "f1": 50,
+        "f2": 20,
+        "f3": 10,
+        "f4": 10,
+        "f5": 5,
+        "f6": 5
+      },
+      "transactions": [
+        {
+          "id": "tx-p4",
+          "fundId": "f4",
+          "amount": 450000,
+          "date": "2026-10-03",
+          "note": "Mỹ phẩm chăm sóc da",
+          "userName": "Nguyễn Thu Hà",
+          "receiptUrl": null
+        },
+        {
+          "id": "tx-p5",
+          "fundId": "f2",
+          "amount": 3000000,
+          "date": "2026-10-01",
+          "note": "Gửi tiết kiệm cá nhân",
+          "userName": "Nguyễn Thu Hà",
+          "receiptUrl": null
+        }
+      ]
+    },
+    "usr-independent": {
+      "monthlyIncome": 22000000,
+      "funds": [
+        {
+          "id": "f1",
+          "name": "Thiết yếu",
+          "icon": "home",
+          "color": "#10B981",
+          "defaultPct": 55
+        },
+        {
+          "id": "f2",
+          "name": "Tiết kiệm",
+          "icon": "piggy-bank",
+          "color": "#3B82F6",
+          "defaultPct": 10
+        },
+        {
+          "id": "f3",
+          "name": "Đầu tư sinh lời",
+          "icon": "trending-up",
+          "color": "#06B6D4",
+          "defaultPct": 10
+        },
+        {
+          "id": "f4",
+          "name": "Hưởng thụ & Du lịch",
+          "icon": "party-popper",
+          "color": "#F59E0B",
+          "defaultPct": 10
+        },
+        {
+          "id": "f5",
+          "name": "Học tập & Sách vở",
+          "icon": "book-open",
+          "color": "#8B5CF6",
+          "defaultPct": 10
+        },
+        {
+          "id": "f6",
+          "name": "Cho đi & Hiếu hỉ",
+          "icon": "heart-handshake",
+          "color": "#EC4899",
+          "defaultPct": 5
+        }
+      ],
+      "allocations": {
+        "f1": 50,
+        "f2": 20,
+        "f3": 15,
+        "f4": 10,
+        "f5": 5,
+        "f6": 0
+      },
+      "transactions": [
+        {
+          "id": "tx-p6",
+          "fundId": "f1",
+          "amount": 3500000,
+          "date": "2026-10-01",
+          "note": "Tiền thuê căn hộ studio",
+          "userName": "Lê Minh Khôi",
+          "receiptUrl": null
+        },
+        {
+          "id": "tx-p7",
+          "fundId": "f4",
+          "amount": 380000,
+          "date": "2026-10-03",
+          "note": "Xem phim rạp cuối tuần",
+          "userName": "Lê Minh Khôi",
+          "receiptUrl": null
+        }
+      ]
+    }
+  },
+  "familyDataStore": {
+    "monthlyIncome": 45000000,
+    "funds": [
+      {
+        "id": "f1",
+        "name": "Thiết yếu",
+        "icon": "home",
+        "color": "#10B981",
+        "defaultPct": 55
+      },
+      {
+        "id": "f2",
+        "name": "Tiết kiệm",
+        "icon": "piggy-bank",
+        "color": "#3B82F6",
+        "defaultPct": 10
+      },
+      {
+        "id": "f3",
+        "name": "Đầu tư sinh lời",
+        "icon": "trending-up",
+        "color": "#06B6D4",
+        "defaultPct": 10
+      },
+      {
+        "id": "f4",
+        "name": "Hưởng thụ & Du lịch",
+        "icon": "party-popper",
+        "color": "#F59E0B",
+        "defaultPct": 10
+      },
+      {
+        "id": "f5",
+        "name": "Học tập & Sách vở",
+        "icon": "book-open",
+        "color": "#8B5CF6",
+        "defaultPct": 10
+      },
+      {
+        "id": "f6",
+        "name": "Cho đi & Hiếu hỉ",
+        "icon": "heart-handshake",
+        "color": "#EC4899",
+        "defaultPct": 5
+      }
+    ],
+    "allocations": {
+      "f1": 60,
+      "f2": 15,
+      "f3": 10,
+      "f4": 5,
+      "f5": 5,
+      "f6": 5
+    },
+    "transactions": [
+      {
+        "id": "tx-f1",
+        "fundId": "f1",
+        "amount": 2850000,
+        "date": "2026-10-02",
+        "note": "Đi siêu thị thực phẩm gia đình cả tuần",
+        "userName": "Trần Văn Lợi",
+        "receiptUrl": null
+      },
+      {
+        "id": "tx-f2",
+        "fundId": "f1",
+        "amount": 1450000,
+        "date": "2026-10-03",
+        "note": "Tiền điện sinh hoạt EVN & nước",
+        "userName": "Nguyễn Thu Hà",
+        "receiptUrl": null
+      },
+      {
+        "id": "tx-f3",
+        "fundId": "f2",
+        "amount": 5000000,
+        "date": "2026-10-01",
+        "note": "Trích quỹ tiết kiệm gia đình mua nhà",
+        "userName": "Trần Văn Lợi",
+        "receiptUrl": null
+      },
+      {
+        "id": "tx-f4",
+        "fundId": "f1",
+        "amount": 3200000,
+        "date": "2026-10-04",
+        "note": "Mua sữa và thực phẩm cho bé",
+        "userName": "Nguyễn Thu Hà",
+        "receiptUrl": null
+      },
+      {
+        "id": "tx-f9-1",
+        "fundId": "f1",
+        "amount": 21500000,
+        "date": "2026-09-02",
+        "note": "Học phí đầu năm học mới & sách vở các con",
+        "userName": "Nguyễn Thu Hà",
+        "receiptUrl": null
+      },
+      {
+        "id": "tx-f9-2",
+        "fundId": "f1",
+        "amount": 5800000,
+        "date": "2026-09-10",
+        "note": "Thực phẩm dinh dưỡng gia đình",
+        "userName": "Trần Văn Lợi",
+        "receiptUrl": null
+      },
+      {
+        "id": "tx-f9-3",
+        "fundId": "f2",
+        "amount": 8000000,
+        "date": "2026-09-01",
+        "note": "Gửi tiết kiệm ngân hàng tháng 9",
+        "userName": "Trần Văn Lợi",
+        "receiptUrl": null
+      },
+      {
+        "id": "tx-f9-4",
+        "fundId": "f3",
+        "amount": 4800000,
+        "date": "2026-09-15",
+        "note": "Góp vốn quỹ đầu tư gia đình",
+        "userName": "Trần Văn Lợi",
+        "receiptUrl": null
+      },
+      {
+        "id": "tx-f9-5",
+        "fundId": "f4",
+        "amount": 2200000,
+        "date": "2026-09-20",
+        "note": "Cả nhà ăn tối buffet cuối tuần",
+        "userName": "Nguyễn Thu Hà",
+        "receiptUrl": null
+      },
+      {
+        "id": "tx-f9-6",
+        "fundId": "f6",
+        "amount": 2000000,
+        "date": "2026-09-25",
+        "note": "Mừng cưới cháu ở quê",
+        "userName": "Trần Văn Lợi",
+        "receiptUrl": null
+      },
+      {
+        "id": "tx-f8-1",
+        "fundId": "f1",
+        "amount": 18500000,
+        "date": "2026-08-05",
+        "note": "Tiền sinh hoạt gia đình & điện nước",
+        "userName": "Nguyễn Thu Hà",
+        "receiptUrl": null
+      },
+      {
+        "id": "tx-f8-2",
+        "fundId": "f1",
+        "amount": 5500000,
+        "date": "2026-08-15",
+        "note": "Siêu thị CoopMart & thực phẩm",
+        "userName": "Trần Văn Lợi",
+        "receiptUrl": null
+      },
+      {
+        "id": "tx-f8-3",
+        "fundId": "f2",
+        "amount": 7000000,
+        "date": "2026-08-01",
+        "note": "Gửi tiết kiệm ngân hàng gia đình",
+        "userName": "Trần Văn Lợi",
+        "receiptUrl": null
+      },
+      {
+        "id": "tx-f8-4",
+        "fundId": "f3",
+        "amount": 4200000,
+        "date": "2026-08-10",
+        "note": "Đầu tư vàng nhẫn tích sản",
+        "userName": "Trần Văn Lợi",
+        "receiptUrl": null
+      },
+      {
+        "id": "tx-f8-5",
+        "fundId": "f4",
+        "amount": 2000000,
+        "date": "2026-08-18",
+        "note": "Vé công viên nước cho cả nhà",
+        "userName": "Nguyễn Thu Hà",
+        "receiptUrl": null
+      },
+      {
+        "id": "tx-f8-6",
+        "fundId": "f6",
+        "amount": 1800000,
+        "date": "2026-08-28",
+        "note": "Gửi biếu ông bà nội ngoại",
+        "userName": "Trần Văn Lợi",
+        "receiptUrl": null
+      }
+    ],
+    "monthlyBudgets": {
+      "2026-08": {
+        "monthlyIncome": 42000000,
+        "allocations": {
+          "f1": 60,
+          "f2": 15,
+          "f3": 10,
+          "f4": 5,
+          "f5": 5,
+          "f6": 5
+        }
+      },
+      "2026-09": {
+        "monthlyIncome": 48000000,
+        "allocations": {
+          "f1": 58,
+          "f2": 17,
+          "f3": 10,
+          "f4": 5,
+          "f5": 5,
+          "f6": 5
+        }
+      },
+      "2026-10": {
+        "monthlyIncome": 45000000,
+        "allocations": {
+          "f1": 60,
+          "f2": 15,
+          "f3": 10,
+          "f4": 5,
+          "f5": 5,
+          "f6": 5
+        }
+      }
+    }
+  },
+  "customRules": [
+    {
+      "id": "custom-tet",
+      "name": "Quy tắc Tháng Tết & Lễ Hội",
+      "desc": "Tăng quỹ Hưởng thụ và Cho đi / Hiếu hỉ cho sum họp cuối năm",
+      "isSystem": false,
+      "values": {
+        "f1": 45,
+        "f2": 10,
+        "f3": 10,
+        "f4": 20,
+        "f5": 5,
+        "f6": 10
+      }
+    },
+    {
+      "id": "custom-house",
+      "name": "Tích Lũy Mua Nhà / Đất",
+      "desc": "Ưu tiên tối đa cho Tiết kiệm và Đầu tư sinh lời cao tốc",
+      "isSystem": false,
+      "values": {
+        "f1": 45,
+        "f2": 30,
+        "f3": 15,
+        "f4": 5,
+        "f5": 5,
+        "f6": 0
+      }
+    }
+  ],
+  "lastUpdatedBy": "Trần Văn Lợi",
+  "lastModified": 1791094237238
+}
