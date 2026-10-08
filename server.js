@@ -67,6 +67,32 @@ setInterval(() => {
   }
 }, 20000);
 
+// Hỗ trợ cơ sở dữ liệu đám mây PostgreSQL (Render Postgres, Supabase, Neon) nếu có DATABASE_URL
+let pgPool = null;
+if (process.env.DATABASE_URL) {
+  try {
+    const { Pool } = require('pg');
+    pgPool = new Pool({
+      connectionString: process.env.DATABASE_URL,
+      ssl: process.env.DATABASE_URL.includes('localhost') ? false : { rejectUnauthorized: false }
+    });
+    pgPool.query(`
+      CREATE TABLE IF NOT EXISTS finflow_store (
+        id VARCHAR(50) PRIMARY KEY,
+        data JSONB NOT NULL,
+        updated_at BIGINT NOT NULL
+      );
+    `).then(() => {
+      console.log('✅ Đã kết nối cơ sở dữ liệu PostgreSQL (Lưu trữ vĩnh viễn trên Cloud)');
+    }).catch(err => {
+      console.warn('Không thể kết nối PostgreSQL, dùng tệp finflow-data.json:', err.message);
+      pgPool = null;
+    });
+  } catch (err) {
+    console.log('Chưa cài pg, sử dụng bộ lưu trữ tệp tin finflow-data.json.');
+  }
+}
+
 const server = http.createServer((req, res) => {
   // CORS Headers để hỗ trợ mọi thiết bị và domain
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -113,18 +139,33 @@ const server = http.createServer((req, res) => {
 
   // 3. API: Get Central Data
   if (url.pathname === '/api/data' && req.method === 'GET') {
-    if (fs.existsSync(DATA_FILE)) {
-      try {
-        const content = fs.readFileSync(DATA_FILE, 'utf8');
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(content);
-        return;
-      } catch (err) {
-        // Fallback
+    const respondFile = () => {
+      if (fs.existsSync(DATA_FILE)) {
+        try {
+          const content = fs.readFileSync(DATA_FILE, 'utf8');
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(content);
+          return;
+        } catch (err) {}
       }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'empty', lastModified: lastServerModified }));
+    };
+
+    if (pgPool) {
+      pgPool.query('SELECT data FROM finflow_store WHERE id = $1', ['central_data'])
+        .then(dbRes => {
+          if (dbRes.rows.length > 0) {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(dbRes.rows[0].data));
+          } else {
+            respondFile();
+          }
+        })
+        .catch(() => respondFile());
+    } else {
+      respondFile();
     }
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ status: 'empty', lastModified: lastServerModified }));
     return;
   }
 
@@ -132,12 +173,29 @@ const server = http.createServer((req, res) => {
   if (url.pathname === '/api/data' && req.method === 'POST') {
     let body = '';
     req.on('data', chunk => { body += chunk; });
-    req.on('end', () => {
+    req.on('end', async () => {
       try {
         const parsed = JSON.parse(body);
         parsed.lastModified = Date.now();
         const jsonStr = JSON.stringify(parsed, null, 2);
-        fs.writeFileSync(DATA_FILE, jsonStr, 'utf8');
+
+        // Luôn lưu bản sao vào file cục bộ
+        try {
+          fs.writeFileSync(DATA_FILE, jsonStr, 'utf8');
+        } catch (fErr) {}
+
+        // Lưu vào PostgreSQL nếu đã kết nối
+        if (pgPool) {
+          try {
+            await pgPool.query(`
+              INSERT INTO finflow_store (id, data, updated_at)
+              VALUES ($1, $2, $3)
+              ON CONFLICT (id) DO UPDATE SET data = $2, updated_at = $3;
+            `, ['central_data', parsed, parsed.lastModified]);
+          } catch (dbErr) {
+            console.error('Lỗi ghi PostgreSQL:', dbErr.message);
+          }
+        }
 
         const senderId = req.headers['x-sender-device'] || null;
         broadcastUpdate(senderId, parsed);
@@ -147,7 +205,8 @@ const server = http.createServer((req, res) => {
           success: true,
           savedAt: new Date().toISOString(),
           lastModified: parsed.lastModified,
-          connectedDevices: sseClients.size
+          connectedDevices: sseClients.size,
+          storageType: pgPool ? 'postgresql' : 'file'
         }));
       } catch (err) {
         res.writeHead(500, { 'Content-Type': 'application/json' });

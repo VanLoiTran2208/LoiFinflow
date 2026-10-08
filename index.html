@@ -99,6 +99,7 @@
     const STORAGE_KEY_FAMILY_DATA = 'finflow_v4_family_data';
     const STORAGE_KEY_FAMILY_INFO = 'finflow_v4_family_info';
     const STORAGE_KEY_CUSTOM_RULES = 'finflow_v4_custom_rules';
+    const STORAGE_KEY_DELETED_TXS = 'finflow_v4_deleted_txs';
 
     // Mẫu tài khoản khởi tạo chuẩn bảo mật
     const INITIAL_ACCOUNTS = [
@@ -382,6 +383,107 @@
     }
 
     // ==========================================
+    // SMART DATA MERGE & AUTO-HEALING HELPERS (BẢO TOÀN DỮ LIỆU VĨNH VIỄN)
+    // ==========================================
+    // Hợp nhất danh sách giao dịch an toàn (Không bao giờ xóa mất chi tiêu của người dùng)
+    function mergeTransactionLists(localList = [], serverList = [], tombstones = new Set()) {
+      const map = new Map();
+      
+      // 1. Nạp giao dịch từ server trước (bỏ qua những cái đã xóa)
+      if (Array.isArray(serverList)) {
+        for (const tx of serverList) {
+          if (tx && tx.id && !tombstones.has(tx.id)) {
+            map.set(tx.id, tx);
+          }
+        }
+      }
+      
+      // 2. Nạp giao dịch từ local (ưu tiên local mới hơn hoặc giao dịch người dùng vừa nhập trên máy)
+      if (Array.isArray(localList)) {
+        for (const tx of localList) {
+          if (tx && tx.id && !tombstones.has(tx.id)) {
+            map.set(tx.id, tx);
+          }
+        }
+      }
+
+      const merged = Array.from(map.values());
+      // Sắp xếp ngày mới nhất lên đầu
+      merged.sort((a, b) => {
+        const timeA = new Date(a.date || 0).getTime();
+        const timeB = new Date(b.date || 0).getTime();
+        return timeB - timeA;
+      });
+      return merged;
+    }
+
+    // Hợp nhất kho dữ liệu cá nhân (Personal Data Store)
+    function smartMergePersonalStores(localStore = {}, serverStore = {}, tombstones = new Set()) {
+      const result = { ...(serverStore || {}), ...(localStore || {}) };
+      const allUserIds = Array.from(new Set([...Object.keys(localStore || {}), ...Object.keys(serverStore || {})]));
+
+      for (const uid of allUserIds) {
+        const localUser = (localStore && localStore[uid]) || null;
+        const serverUser = (serverStore && serverStore[uid]) || null;
+
+        if (localUser && serverUser) {
+          result[uid] = {
+            ...serverUser,
+            ...localUser,
+            monthlyBudgets: {
+              ...(serverUser.monthlyBudgets || {}),
+              ...(localUser.monthlyBudgets || {})
+            },
+            transactions: mergeTransactionLists(localUser.transactions, serverUser.transactions, tombstones)
+          };
+        } else if (localUser) {
+          result[uid] = {
+            ...localUser,
+            transactions: mergeTransactionLists(localUser.transactions, [], tombstones)
+          };
+        } else if (serverUser) {
+          result[uid] = {
+            ...serverUser,
+            transactions: mergeTransactionLists([], serverUser.transactions, tombstones)
+          };
+        }
+      }
+      return result;
+    }
+
+    // Hợp nhất kho dữ liệu gia đình (Family Data Store)
+    function smartMergeFamilyStore(localFamily = {}, serverFamily = {}, tombstones = new Set()) {
+      if (!localFamily && !serverFamily) return null;
+      if (!serverFamily) return localFamily;
+      if (!localFamily) return serverFamily;
+
+      return {
+        ...serverFamily,
+        ...localFamily,
+        monthlyBudgets: {
+          ...(serverFamily.monthlyBudgets || {}),
+          ...(localFamily.monthlyBudgets || {})
+        },
+        transactions: mergeTransactionLists(localFamily.transactions, serverFamily.transactions, tombstones)
+      };
+    }
+
+    // Kiểm tra xem Local có chứa giao dịch mà Server đang bị thiếu không (để tự động chữa lành/push lên server)
+    function checkLocalHasMissingOnServer(localStore = {}, serverStore = {}) {
+      if (!localStore) return false;
+      if (!serverStore) return true;
+      for (const uid of Object.keys(localStore)) {
+        const localTxs = localStore[uid]?.transactions || [];
+        const serverTxs = serverStore[uid]?.transactions || [];
+        const serverIds = new Set(serverTxs.map(t => t.id));
+        for (const tx of localTxs) {
+          if (tx && tx.id && !serverIds.has(tx.id)) return true;
+        }
+      }
+      return false;
+    }
+
+    // ==========================================
     // MAIN APP COMPONENT
     // ==========================================
     function App() {
@@ -438,8 +540,12 @@
       });
 
       const [activeTab, setActiveTab] = useState('dashboard');
-      const [activeWorkspace, setActiveWorkspace] = useState('personal'); // Mặc định vào Cá nhân riêng biệt
-      const [selectedMonth, setSelectedMonth] = useState('2026-10'); // Tháng đang quản lý/phân bổ
+      const [selectedMonth, setSelectedMonth] = useState(() => {
+        const d = new Date();
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        return `${y}-${m}`;
+      });
 
       // QUY TẮC PHÂN BỔ TÙY CHỈNH
       const [customRules, setCustomRules] = useState(() => {
@@ -484,34 +590,21 @@
       const isInitialLoaded = useRef(false);
       const pushTimeoutRef = useRef(null);
 
-      // Cập nhật dữ liệu từ máy chủ trung tâm vào Local State & LocalStorage
-      const applyServerData = useCallback((serverData) => {
-        if (!serverData || !serverData.accounts || !Array.isArray(serverData.accounts)) return false;
-
-        isRemoteUpdate.current = true;
-        setAccounts(serverData.accounts);
-        if (serverData.familyInfo) setFamilyInfo(serverData.familyInfo);
-        if (serverData.personalDataStore) setPersonalDataStore(serverData.personalDataStore);
-        if (serverData.familyDataStore) setFamilyDataStore(serverData.familyDataStore);
-        if (serverData.customRules) setCustomRules(serverData.customRules);
-
+      // Danh sách ID giao dịch đã xóa (Tombstones để chống phục hồi nhầm khi hợp nhất)
+      const [deletedTxIds, setDeletedTxIds] = useState(() => {
         try {
-          localStorage.setItem(STORAGE_KEY_ACCOUNTS, JSON.stringify(serverData.accounts));
-          if (serverData.familyInfo) localStorage.setItem(STORAGE_KEY_FAMILY_INFO, JSON.stringify(serverData.familyInfo));
-          if (serverData.personalDataStore) localStorage.setItem(STORAGE_KEY_PERSONAL_DATA, JSON.stringify(serverData.personalDataStore));
-          if (serverData.familyDataStore) localStorage.setItem(STORAGE_KEY_FAMILY_DATA, JSON.stringify(serverData.familyDataStore));
-          if (serverData.customRules) localStorage.setItem(STORAGE_KEY_CUSTOM_RULES, JSON.stringify(serverData.customRules));
+          const saved = localStorage.getItem(STORAGE_KEY_DELETED_TXS);
+          return saved ? JSON.parse(saved) : [];
+        } catch (e) {
+          return [];
+        }
+      });
+
+      useEffect(() => {
+        try {
+          localStorage.setItem(STORAGE_KEY_DELETED_TXS, JSON.stringify(deletedTxIds));
         } catch (e) {}
-
-        setLastSyncTime(new Date());
-        setSyncStatus('connected');
-
-        setTimeout(() => {
-          isRemoteUpdate.current = false;
-        }, 400);
-
-        return true;
-      }, []);
+      }, [deletedTxIds]);
 
       // Đẩy dữ liệu lên máy chủ trung tâm
       const pushDataToServer = useCallback((overridePayload) => {
@@ -524,6 +617,7 @@
           personalDataStore,
           familyDataStore,
           customRules,
+          deletedTxIds,
           lastUpdatedBy: currentUser?.fullName || 'Thiết bị',
           lastModified: Date.now()
         };
@@ -546,7 +640,98 @@
           console.warn('Sync push fallback locally:', err);
           setSyncStatus('offline');
         });
-      }, [accounts, familyInfo, personalDataStore, familyDataStore, customRules, currentUser, deviceId]);
+      }, [accounts, familyInfo, personalDataStore, familyDataStore, customRules, deletedTxIds, currentUser, deviceId]);
+
+      // Cập nhật dữ liệu từ máy chủ trung tâm vào Local State & LocalStorage thông qua Smart Merge
+      const applyServerData = useCallback((serverData) => {
+        if (!serverData || !serverData.accounts || !Array.isArray(serverData.accounts)) return false;
+
+        isRemoteUpdate.current = true;
+
+        // 1. Cập nhật Tombstones (ID các giao dịch đã xóa)
+        let combinedTombstones = new Set(deletedTxIds);
+        if (Array.isArray(serverData.deletedTxIds)) {
+          serverData.deletedTxIds.forEach(id => combinedTombstones.add(id));
+          const updatedTombstonesArray = Array.from(combinedTombstones);
+          setDeletedTxIds(updatedTombstonesArray);
+          try {
+            localStorage.setItem(STORAGE_KEY_DELETED_TXS, JSON.stringify(updatedTombstonesArray));
+          } catch (e) {}
+        }
+
+        // 2. Hợp nhất danh sách tài khoản (không bao giờ làm mất tài khoản người dùng đã tạo)
+        const accountMap = new Map();
+        if (Array.isArray(serverData.accounts)) {
+          serverData.accounts.forEach(a => accountMap.set(a.id, a));
+        }
+        setAccounts(prevAccounts => {
+          prevAccounts.forEach(a => {
+            if (!accountMap.has(a.id)) {
+              accountMap.set(a.id, a);
+            }
+          });
+          const mergedAccounts = Array.from(accountMap.values());
+          try { localStorage.setItem(STORAGE_KEY_ACCOUNTS, JSON.stringify(mergedAccounts)); } catch (e) {}
+          return mergedAccounts;
+        });
+
+        // 3. Thông tin gia đình & Quy tắc tùy chỉnh
+        if (serverData.familyInfo) {
+          setFamilyInfo(serverData.familyInfo);
+          try { localStorage.setItem(STORAGE_KEY_FAMILY_INFO, JSON.stringify(serverData.familyInfo)); } catch (e) {}
+        }
+        if (serverData.customRules) {
+          setCustomRules(prev => {
+            const mergedRules = Array.isArray(serverData.customRules) ? serverData.customRules : prev;
+            try { localStorage.setItem(STORAGE_KEY_CUSTOM_RULES, JSON.stringify(mergedRules)); } catch (e) {}
+            return mergedRules;
+          });
+        }
+
+        // 4. HỢP NHẤT THÔNG MINH (SMART MERGE) KHO GIAO DỊCH CÁ NHÂN & GIA ĐÌNH
+        let needServerHealing = false;
+
+        setPersonalDataStore(prevLocalStore => {
+          const mergedPersonal = smartMergePersonalStores(prevLocalStore, serverData.personalDataStore, combinedTombstones);
+          try { localStorage.setItem(STORAGE_KEY_PERSONAL_DATA, JSON.stringify(mergedPersonal)); } catch (e) {}
+          
+          if (checkLocalHasMissingOnServer(prevLocalStore, serverData.personalDataStore)) {
+            needServerHealing = true;
+          }
+          return mergedPersonal;
+        });
+
+        setFamilyDataStore(prevLocalFamily => {
+          const mergedFamily = smartMergeFamilyStore(prevLocalFamily, serverData.familyDataStore, combinedTombstones);
+          if (mergedFamily) {
+            try { localStorage.setItem(STORAGE_KEY_FAMILY_DATA, JSON.stringify(mergedFamily)); } catch (e) {}
+            const localFamilyTxs = prevLocalFamily?.transactions || [];
+            const serverFamilyTxs = serverData.familyDataStore?.transactions || [];
+            const serverFamilyIds = new Set(serverFamilyTxs.map(t => t.id));
+            if (localFamilyTxs.some(t => t && t.id && !serverFamilyIds.has(t.id))) {
+              needServerHealing = true;
+            }
+          }
+          return mergedFamily;
+        });
+
+        setLastSyncTime(new Date());
+        setSyncStatus('connected');
+
+        setTimeout(() => {
+          isRemoteUpdate.current = false;
+        }, 400);
+
+        // NẾU MÁY CHỦ BỊ KHỞI ĐỘNG LẠI (RENDER RESTART) BỊ THIẾU DỮ LIỆU CỦA NGƯỜI DÙNG -> TỰ ĐỘNG CHỮA LÀNH
+        if (needServerHealing) {
+          console.log('[FinFlow Auto-Healing] Phục hồi và bổ sung chi tiêu từ Local lên máy chủ trung tâm...');
+          setTimeout(() => {
+            pushDataToServer();
+          }, 600);
+        }
+
+        return true;
+      }, [deletedTxIds, pushDataToServer]);
 
       // Nút ép đồng bộ tức thì (Manual Force Sync)
       const handleForceSync = useCallback(() => {
@@ -567,6 +752,84 @@
             showToast('⚠️ Không thể kết nối máy chủ! Dữ liệu vẫn được lưu an toàn tại máy.');
           });
       }, [applyServerData, pushDataToServer]);
+
+      // ==========================================
+      // XUẤT (BACKUP) & KHÔI PHỤC (RESTORE) DỮ LIỆU VĨNH VIỄN
+      // ==========================================
+      const handleExportData = useCallback(() => {
+        const backupData = {
+          version: 'finflow-v4',
+          exportDate: new Date().toISOString(),
+          accounts,
+          familyInfo,
+          personalDataStore,
+          familyDataStore,
+          customRules,
+          deletedTxIds
+        };
+        const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(backupData, null, 2));
+        const downloadAnchor = document.createElement('a');
+        const filename = `finflow-backup-${new Date().toISOString().slice(0, 10)}.json`;
+        downloadAnchor.setAttribute('href', dataStr);
+        downloadAnchor.setAttribute('download', filename);
+        document.body.appendChild(downloadAnchor);
+        downloadAnchor.click();
+        downloadAnchor.remove();
+        showToast('📁 Đã tải file sao lưu FinFlow về thiết bị của bạn!');
+      }, [accounts, familyInfo, personalDataStore, familyDataStore, customRules, deletedTxIds]);
+
+      const handleImportData = useCallback((importedJson) => {
+        try {
+          const parsed = typeof importedJson === 'string' ? JSON.parse(importedJson) : importedJson;
+          if (!parsed || (!parsed.accounts && !parsed.personalDataStore)) {
+            alert('File sao lưu không hợp lệ hoặc sai định dạng FinFlow!');
+            return false;
+          }
+
+          if (parsed.accounts && Array.isArray(parsed.accounts)) {
+            setAccounts(parsed.accounts);
+            localStorage.setItem(STORAGE_KEY_ACCOUNTS, JSON.stringify(parsed.accounts));
+          }
+          if (parsed.familyInfo) {
+            setFamilyInfo(parsed.familyInfo);
+            localStorage.setItem(STORAGE_KEY_FAMILY_INFO, JSON.stringify(parsed.familyInfo));
+          }
+          if (parsed.personalDataStore) {
+            setPersonalDataStore(parsed.personalDataStore);
+            localStorage.setItem(STORAGE_KEY_PERSONAL_DATA, JSON.stringify(parsed.personalDataStore));
+          }
+          if (parsed.familyDataStore) {
+            setFamilyDataStore(parsed.familyDataStore);
+            localStorage.setItem(STORAGE_KEY_FAMILY_DATA, JSON.stringify(parsed.familyDataStore));
+          }
+          if (parsed.customRules) {
+            setCustomRules(parsed.customRules);
+            localStorage.setItem(STORAGE_KEY_CUSTOM_RULES, JSON.stringify(parsed.customRules));
+          }
+          if (parsed.deletedTxIds && Array.isArray(parsed.deletedTxIds)) {
+            setDeletedTxIds(parsed.deletedTxIds);
+            localStorage.setItem(STORAGE_KEY_DELETED_TXS, JSON.stringify(parsed.deletedTxIds));
+          }
+
+          // Đẩy ngay lên server trung tâm
+          pushDataToServer({
+            accounts: parsed.accounts || accounts,
+            familyInfo: parsed.familyInfo || familyInfo,
+            personalDataStore: parsed.personalDataStore || personalDataStore,
+            familyDataStore: parsed.familyDataStore || familyDataStore,
+            customRules: parsed.customRules || customRules,
+            deletedTxIds: parsed.deletedTxIds || deletedTxIds,
+            lastUpdatedBy: currentUser?.fullName || 'Khôi phục file',
+            lastModified: Date.now()
+          });
+
+          showToast('✅ Khôi phục toàn bộ chi tiêu thành công!');
+          return true;
+        } catch (err) {
+          alert('Lỗi khi đọc file: ' + err.message);
+          return false;
+        }
+      }, [accounts, familyInfo, personalDataStore, familyDataStore, customRules, deletedTxIds, currentUser, pushDataToServer]);
 
       // Khởi tạo kết nối & lấy dữ liệu lần đầu
       useEffect(() => {
@@ -724,27 +987,23 @@
         localStorage.setItem(STORAGE_KEY_FAMILY_INFO, JSON.stringify(familyInfo));
       }, [familyInfo]);
 
-      // Nâng cấp dữ liệu cũ nếu cache trình duyệt chưa có monthlyBudgets
+      // Nâng cấp cấu trúc dữ liệu nếu chưa có monthlyBudgets mà KHÔNG làm mất giao dịch
       useEffect(() => {
         if (personalDataStore && !personalDataStore['usr-owner']?.monthlyBudgets) {
           setPersonalDataStore(prev => ({
             ...prev,
             'usr-owner': {
               ...(prev['usr-owner'] || {}),
-              monthlyBudgets: INITIAL_PERSONAL_DATA['usr-owner'].monthlyBudgets,
-              transactions: (prev['usr-owner']?.transactions && prev['usr-owner'].transactions.length >= 7)
-                ? prev['usr-owner'].transactions
-                : INITIAL_PERSONAL_DATA['usr-owner'].transactions,
+              monthlyBudgets: INITIAL_PERSONAL_DATA['usr-owner']?.monthlyBudgets || {},
+              transactions: prev['usr-owner']?.transactions || [],
             }
           }));
         }
         if (familyDataStore && !familyDataStore.monthlyBudgets) {
           setFamilyDataStore(prev => ({
             ...prev,
-            monthlyBudgets: INITIAL_FAMILY_DATA.monthlyBudgets,
-            transactions: (prev?.transactions && prev.transactions.length >= 7)
-              ? prev.transactions
-              : INITIAL_FAMILY_DATA.transactions,
+            monthlyBudgets: INITIAL_FAMILY_DATA?.monthlyBudgets || {},
+            transactions: prev?.transactions || [],
           }));
         }
       }, []);
@@ -812,7 +1071,8 @@
 
       // Danh sách các tháng có dữ liệu
       const availableMonths = useMemo(() => {
-        const monthSet = new Set(['2026-08', '2026-09', '2026-10']);
+        const curRealMonth = new Date().toISOString().slice(0, 7);
+        const monthSet = new Set(['2026-08', '2026-09', '2026-10', curRealMonth]);
         if (selectedMonth) monthSet.add(selectedMonth);
         if (currentWorkspaceData?.monthlyBudgets) {
           Object.keys(currentWorkspaceData.monthlyBudgets).forEach(m => monthSet.add(m));
@@ -1015,6 +1275,15 @@
         const currentTxs = currentWorkspaceData?.transactions || [];
         const updatedTxs = [tx, ...currentTxs];
         updateCurrentWorkspaceData({ transactions: updatedTxs });
+
+        // Tự động chuyển selectedMonth sang tháng của giao dịch vừa thêm để người dùng nhìn thấy ngay
+        if (tx && tx.date) {
+          const txMonth = tx.date.slice(0, 7);
+          if (txMonth && txMonth !== selectedMonth) {
+            setSelectedMonth(txMonth);
+          }
+        }
+
         setIsAddModalOpen(false);
         showToast(`Đã ghi nhận chi tiêu ${formatVND(tx.amount)}!`);
       };
@@ -1024,6 +1293,14 @@
         const currentTxs = currentWorkspaceData?.transactions || [];
         const updatedTxs = currentTxs.filter(t => t.id !== txId);
         updateCurrentWorkspaceData({ transactions: updatedTxs });
+
+        // Đánh dấu tombstone để vĩnh viễn không bị server cũ hoặc thiết bị khác phục hồi lại
+        setDeletedTxIds(prev => {
+          const next = Array.from(new Set([...prev, txId]));
+          try { localStorage.setItem(STORAGE_KEY_DELETED_TXS, JSON.stringify(next)); } catch (e) {}
+          return next;
+        });
+
         showToast('Đã xóa giao dịch thành công!');
       };
 
@@ -1052,6 +1329,8 @@
                 lastSyncTime={lastSyncTime}
                 onForceSync={handleForceSync}
                 networkInfo={networkInfo}
+                onExportData={handleExportData}
+                onImportData={handleImportData}
               />
             )}
           </>
@@ -1413,6 +1692,8 @@
               lastSyncTime={lastSyncTime}
               onForceSync={handleForceSync}
               networkInfo={networkInfo}
+              onExportData={handleExportData}
+              onImportData={handleImportData}
             />
           )}
 
@@ -2769,7 +3050,8 @@
 
       // 1. TẬP HỢP TẤT CẢ CÁC THÁNG THEO THỨ TỰ THỜI GIAN (TĂNG DẦN ĐỂ VẼ BIỂU ĐỒ)
       const allMonthsChronological = useMemo(() => {
-        const monthSet = new Set(['2026-08', '2026-09', '2026-10']);
+        const curRealMonth = new Date().toISOString().slice(0, 7);
+        const monthSet = new Set(['2026-08', '2026-09', '2026-10', curRealMonth]);
         if (selectedMonth) monthSet.add(selectedMonth);
         if (currentWorkspaceData?.monthlyBudgets) {
           Object.keys(currentWorkspaceData.monthlyBudgets).forEach(m => monthSet.add(m));
@@ -3737,8 +4019,10 @@
     // ==========================================
     // MODAL: MÃ QR ĐIỆN THOẠI DI ĐỘNG & LINK CÔNG KHAI (MOBILE ACCESS & PUBLIC LINK)
     // ==========================================
-    function MobileQRModal({ onClose, syncStatus = 'connected', connectedDevicesCount = 1, lastSyncTime, onForceSync, networkInfo }) {
-      const [accessTab, setAccessTab] = useState('wifi'); // 'wifi' | 'public' | 'guide'
+    function MobileQRModal({ onClose, syncStatus = 'connected', connectedDevicesCount = 1, lastSyncTime, onForceSync, networkInfo, onExportData, onImportData }) {
+      const [accessTab, setAccessTab] = useState('wifi'); // 'wifi' | 'public' | 'guide' | 'backup'
+      const fileInputRef = useRef(null);
+      const [importStatus, setImportStatus] = useState(null);
       const [lanUrl, setLanUrl] = useState(() => {
         if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
           return window.location.origin;
@@ -3848,7 +4132,7 @@
             </div>
 
             {/* TAB SELECTOR */}
-            <div className="grid grid-cols-3 gap-1 p-1 bg-zinc-100 dark:bg-zinc-800/80 rounded-2xl mb-5 text-xs font-bold">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 p-1 bg-zinc-100 dark:bg-zinc-800/80 rounded-2xl mb-5 text-xs font-bold">
               <button
                 type="button"
                 onClick={() => setAccessTab('wifi')}
@@ -3858,7 +4142,7 @@
                     : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200'
                 }`}
               >
-                <span>📶</span> <span className="truncate">Cùng Wi-Fi (0 giây)</span>
+                <span>📶</span> <span className="truncate">Cùng Wi-Fi</span>
               </button>
               <button
                 type="button"
@@ -3881,6 +4165,17 @@
                 }`}
               >
                 <span>⚡</span> <span className="truncate">Cơ Chế Đồng Bộ</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setAccessTab('backup')}
+                className={`py-2 px-1 rounded-xl transition flex items-center justify-center gap-1 ${
+                  accessTab === 'backup'
+                    ? 'bg-white dark:bg-zinc-900 text-emerald-600 dark:text-emerald-400 shadow-sm'
+                    : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200'
+                }`}
+              >
+                <span>💾</span> <span className="truncate">Sao Lưu & Khôi Phục</span>
               </button>
             </div>
 
@@ -4033,6 +4328,102 @@
                   <p className="font-bold text-zinc-800 dark:text-zinc-200">🛡️ Bảo Mật & Hoạt Động Ngoại Tuyến:</p>
                   <p>• <strong>Bảo mật mật khẩu:</strong> Sau khi đăng xuất, bất kỳ ai muốn vào tài khoản đều phải nhập đúng mật khẩu đã thiết lập.</p>
                   <p>• <strong>Chống mất dữ liệu:</strong> Toàn bộ dữ liệu được lưu song song tại bộ nhớ trình duyệt (LocalStorage) và máy chủ trung tâm (<code className="font-mono">finflow-data.json</code>). Kể cả khi mất mạng, bạn vẫn ghi chép bình thường và sẽ tự động đồng bộ khi có kết nối trở lại.</p>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 4: SAO LƯU & KHÔI PHỤC VĨNH VIỄN (BACKUP & RESTORE) */}
+            {accessTab === 'backup' && (
+              <div className="space-y-4 text-left">
+                <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/60 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl">🛡️</span>
+                    <h3 className="font-extrabold text-sm text-emerald-900 dark:text-emerald-200">
+                      Cơ Chế Bảo Vệ Chi Tiêu Vĩnh Viễn (3 Tầng An Toàn)
+                    </h3>
+                  </div>
+                  <p className="text-xs text-zinc-600 dark:text-zinc-300 leading-relaxed">
+                    FinFlow bảo vệ chi tiêu của bạn thông qua 3 cơ chế tự động:
+                  </p>
+                  <ul className="text-xs text-zinc-600 dark:text-zinc-300 space-y-1.5 list-disc pl-4">
+                    <li><strong>Tầng 1 (Offline-First Browser):</strong> Chi tiêu được lưu ngay vào bộ nhớ trình duyệt điện thoại/máy tính của bạn. Kể cả khi tắt máy hay Render sleep, chi tiêu không bao giờ mất.</li>
+                    <li><strong>Tầng 2 (Auto-Healing Server):</strong> Mỗi lần bạn mở web, trình duyệt tự động kiểm tra và chữa lành máy chủ — tự phục hồi những giao dịch còn thiếu.</li>
+                    <li><strong>Tầng 3 (Sao Lưu Tùy Chọn):</strong> Bạn có thể tải file sao lưu JSON về máy bất cứ lúc nào và khôi phục lại chỉ với 1 cú chạm.</li>
+                  </ul>
+                </div>
+
+                {/* 2 NÚT THAO TÁC: TẢI VỀ & KHÔI PHỤC */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* NÚT TẢI VỀ SAO LƯU */}
+                  <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-850 border border-zinc-200 dark:border-zinc-700 space-y-2 text-center sm:text-left flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center gap-2 mb-1 justify-center sm:justify-start">
+                        <span className="text-lg">📥</span>
+                        <span className="text-xs font-bold uppercase tracking-wider text-zinc-800 dark:text-zinc-200">Tải File Sao Lưu</span>
+                      </div>
+                      <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                        Xuất toàn bộ chi tiêu, tài khoản và kế hoạch thành file JSON để lưu trữ trên máy tính/điện thoại.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (onExportData) onExportData();
+                      }}
+                      className="w-full mt-3 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md shadow-emerald-600/20 transition flex items-center justify-center gap-2 active:scale-95"
+                    >
+                      <span>📥</span>
+                      <span>Tải Về File Sao Lưu (.json)</span>
+                    </button>
+                  </div>
+
+                  {/* NÚT KHÔI PHỤC TỪ FILE */}
+                  <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-850 border border-zinc-200 dark:border-zinc-700 space-y-2 text-center sm:text-left flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center gap-2 mb-1 justify-center sm:justify-start">
+                        <span className="text-lg">📤</span>
+                        <span className="text-xs font-bold uppercase tracking-wider text-zinc-800 dark:text-zinc-200">Khôi Phục Dữ Liệu</span>
+                      </div>
+                      <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                        Nạp file sao lưu FinFlow (.json) để khôi phục toàn bộ chi tiêu trên thiết bị mới bất kỳ lúc nào.
+                      </p>
+                    </div>
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      accept=".json,application/json"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        const reader = new FileReader();
+                        reader.onload = (evt) => {
+                          try {
+                            const content = evt.target.result;
+                            if (onImportData) {
+                              const ok = onImportData(content);
+                              if (ok) {
+                                setImportStatus('✅ Đã nạp thành công!');
+                                setTimeout(() => setImportStatus(null), 3000);
+                              }
+                            }
+                          } catch (err) {
+                            alert('Không thể đọc file: ' + err.message);
+                          }
+                        };
+                        reader.readAsText(file);
+                        e.target.value = '';
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="w-full mt-3 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-md shadow-blue-600/20 transition flex items-center justify-center gap-2 active:scale-95"
+                    >
+                      <span>📤</span>
+                      <span>{importStatus || 'Chọn File Khôi Phục (.json)'}</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             )}

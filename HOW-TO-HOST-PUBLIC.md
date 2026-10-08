@@ -49,8 +49,27 @@ Nếu bạn muốn mở ngay 1 đường link online HTTPS công khai cho ngư�
 
 ---
 
-## 💡 CƠ CHẾ ĐỒNG BỘ DỮ LIỆU ĐA THIẾT BỊ:
-- **Tự động nhận diện thiết bị:** Mỗi tab hoặc điện thoại được cấp một mã nhận diện độc lập để tránh gửi lặp dữ liệu.
-- **Tốc độ dưới 50ms:** Ứng dụng sử dụng công nghệ **Server-Sent Events (SSE)**. Khi bạn bấm "Ghi nhận chi tiêu" trên điện thoại, máy tính ở nhà sẽ nhận tín hiệu và cập nhật biểu đồ phân bổ quỹ trong chớp mắt.
-- **Hoạt động cả khi mất mạng:** Dữ liệu luôn được sao lưu tức thì vào bộ nhớ máy (`localStorage`). Khi mạng chập chờn, bạn vẫn ghi chép bình thường và sẽ tự động đồng bộ lên máy chủ ngay khi có kết nối trở lại.
-- **Bảo mật tuyệt đối:** Mỗi tài khoản độc lập, sau khi đăng xuất bắt buộc phải nhập mật khẩu để vào lại. Tài khoản chủ hộ có toàn quyền quản lý thành viên và bảo vệ quỹ chung gia đình.
+---
+
+## 💾 CƠ CHẾ LƯU TRỮ VĨNH VIỄN & BẢO VỆ CHI TIÊU KHÔNG BAO GIỜ BỊ RESET
+
+### ❓ Vì sao trên Render gói Free trước đây ngày hôm sau lại bị mất chi tiêu?
+1. **Bộ nhớ tạm thời (Ephemeral Filesystem) của Cloud Free:** Trên Render hoặc Heroku gói miễn phí, sau 15 phút không có người truy cập, máy chủ sẽ tự động "ngủ" (Spin down). Khi có người mở lại, Render khởi động container mới từ mã nguồn GitHub ban đầu, khiến tệp `finflow-data.json` bị đặt lại về ban đầu.
+2. **Cơ chế ghi đè trước đây:** Khi trình duyệt mở lại trang web vào ngày hôm sau, nó tải dữ liệu mặc định từ máy chủ vừa khởi động và vô tình ghi đè lên bộ nhớ của máy bạn.
+
+### 🛡️ GIẢI PHÁP 3 TẦNG BẢO VỆ TOÀN DIỆN ĐÃ ĐƯỢC TÍCH HỢP:
+1. **Tầng 1 (Offline-First Trình Duyệt):** Mọi giao dịch chi tiêu được lưu tức thì vào bộ nhớ vĩnh viễn của trình duyệt (`localStorage`) trên máy tính và điện thoại của bạn.
+2. **Tầng 2 (Smart Merge & Tự Động Chữa Lành Máy Chủ):** Khi bạn mở trang web, FinFlow so sánh dữ liệu thông minh theo ID từng giao dịch (Smart Merge) và Tombstone (danh sách đã xóa). Nếu phát hiện máy chủ Render vừa khởi động lại và bị thiếu chi tiêu của bạn, **trình duyệt sẽ tự động đẩy toàn bộ chi tiêu lên máy chủ để chữa lành ngay lập tức**! Bạn không bao giờ bị mất chi tiêu nữa.
+3. **Tầng 3 (Sao Lưu & Khôi Phục 1-Chạm):** Trong cửa sổ "Trung Tâm Đồng Bộ & Link Online", bấm sang tab **💾 Sao Lưu & Khôi Phục**:
+   - **Tải File Sao Lưu (.json):** Xuất toàn bộ chi tiêu, tài khoản và quy tắc về máy để cất giữ an toàn.
+   - **Khôi Phục Dữ Liệu (.json):** Nạp lại dữ liệu trên bất kỳ máy mới nào trong 1 giây.
+
+### 🐘 LƯU TRỮ ĐÁM MÂY VĨNH VIỄN 100% VỚI RENDER POSTGRESQL (MIỄN PHÍ):
+Nếu muốn máy chủ Cloud Render lưu trực tiếp vào cơ sở dữ liệu chuyên nghiệp:
+1. Trên trang quản lý [Render.com](https://dashboard.render.com), bấm **New +** ➔ chọn **PostgreSQL**.
+2. Đặt tên (ví dụ: `finflow-db`), chọn gói **Free**, bấm **Create Database**.
+3. Sau khi tạo xong, cuộn xuống mục **Connections**, sao chép dòng **Internal Database URL** (hoặc External Database URL).
+4. Vào Web Service FinFlow của bạn trên Render ➔ chọn mục **Environment** ➔ bấm **Add Environment Variable**:
+   - Key: `DATABASE_URL`
+   - Value: Dán đường link PostgreSQL vừa sao chép ở trên.
+5. Render sẽ tự động kết nối PostgreSQL và lưu vĩnh viễn toàn bộ chi tiêu vào bảng `finflow_store`, không bao giờ bị reset kể cả sau khi ngủ hay triển khai lại mã nguồn!
